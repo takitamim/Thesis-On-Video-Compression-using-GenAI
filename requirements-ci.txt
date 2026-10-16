@@ -1,6 +1,6 @@
-# Dependencies for running prediction-time measurement on GitHub Actions (CPU)
+# Dependencies for running prediction-time measurement on GitHub Actions (CPU).
+# torch + torchvision are installed in the workflow from the PyTorch CPU index
+# (must come from the same index so versions match).
 numpy
 pillow
 pandas
-torchvision
-# Install torch separately in the workflow with the official CPU wheel index.
