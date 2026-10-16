@@ -30,7 +30,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
-from torchvision import transforms
 
 
 # =============================================================================
@@ -299,20 +298,24 @@ def parse_resolution(video_name):
 # TIMING BENCHMARK
 # =============================================================================
 
+def pil_to_model_tensor(pil_img, model_resize):
+    """Resize + normalize a PIL image without torchvision (avoids torch/vision version clashes on CI)."""
+    h, w = model_resize
+    pil_img = pil_img.resize((w, h), Image.BICUBIC)
+    arr = np.asarray(pil_img, dtype=np.float32) / 255.0  # (H, W), values in [0, 1]
+    # Normalize with mean/std 0.5 → map to [-1, 1]
+    arr = (arr - _NORM_MEAN[0]) / _NORM_STD[0]
+    return torch.from_numpy(arr).unsqueeze(0)  # (1, H, W)
+
+
 def measure_prediction_time(model, vvc_yuv_path, width, height, gop_start_0idx, model_resize):
     """
     Measures average inference time for predicting the last frame of one GOP-4.
     Reads 3 preceding frames (SEQ_LEN=3) and runs model inference.
     """
-    to_model_res = transforms.Compose([
-        transforms.Resize(model_resize, interpolation=transforms.InterpolationMode.BICUBIC),
-        transforms.ToTensor(),
-        transforms.Normalize(_NORM_MEAN, _NORM_STD),
-    ])
-
     # Read preceding 3 VVC frames (GOP-4: SEQ_LEN = 3)
     input_pils = [read_yuv_frame(vvc_yuv_path, width, height, gop_start_0idx + i) for i in range(SEQ_LEN)]
-    input_tensors = [to_model_res(pil).unsqueeze(0).to(DEVICE) for pil in input_pils]
+    input_tensors = [pil_to_model_tensor(pil, model_resize).unsqueeze(0).to(DEVICE) for pil in input_pils]
     x = torch.stack(input_tensors, dim=1)  # (1, T=3, C=1, 512, 512)
 
     # Warmup runs
