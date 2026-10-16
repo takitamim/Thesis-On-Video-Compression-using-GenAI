@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Local experiment outputs (keep source data; ignore regenerated results)
+Archive/Class Prediction Time/
+Archive/Class Prediction Time GOP4/
+Archive/New model/
+Archive/Matlab BD Curve/
+Visual Quality Comparison/
+Rate Distortion Curves/
+
+# Large / unrelated local folders you do NOT need on GitHub for ΔT Step 1
+*.log
+*.zip
+*.rar
+*.7z

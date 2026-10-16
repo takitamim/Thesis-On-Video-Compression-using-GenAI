@@ -1,0 +1,6 @@
+# Dependencies for running prediction-time measurement on GitHub Actions (CPU)
+numpy
+pillow
+pandas
+torchvision
+# Install torch separately in the workflow with the official CPU wheel index.
