@@ -58,9 +58,14 @@ QPS           = ["QP37", "QP42", "QP47", "QP51"]
 
 CLASS_FOLDERS = ["ClassA", "ClassB", "ClassC", "ClassD"]
 
+# Optional: measure only one class (e.g. MEASURE_CLASS=ClassD). Empty = all classes.
+MEASURE_CLASS = os.environ.get("MEASURE_CLASS", "").strip()
+
 # Benchmark timing settings
 WARMUP_ITERS = 2
 TIMED_ITERS  = 5
+
+FIELDNAMES = ["testing_class", "video_id", "qp", "frame_index", "pred_time_sec"]
 
 
 # =============================================================================
@@ -347,7 +352,29 @@ def measure_prediction_time(model, vvc_yuv_path, width, height, gop_start_0idx, 
 # MAIN EXECUTION
 # =============================================================================
 
+def output_csv_path(class_folder=None):
+    """Per-class CSV when MEASURE_CLASS is set; otherwise the combined path."""
+    if class_folder:
+        return os.path.join(OUT_DIR, f"prediction_times_{class_folder}.csv")
+    return PRED_CSV
+
+
+def write_records(path, records):
+    """Overwrite CSV with current records (called after every video/QP)."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(records)
+
+
 def main():
+    classes = [MEASURE_CLASS] if MEASURE_CLASS else CLASS_FOLDERS
+    if MEASURE_CLASS and MEASURE_CLASS not in CLASS_FOLDERS:
+        raise SystemExit(f"[ERROR] Unknown MEASURE_CLASS={MEASURE_CLASS!r}. Expected one of {CLASS_FOLDERS}")
+
+    out_csv = output_csv_path(MEASURE_CLASS if MEASURE_CLASS else None)
+
     print(f"[Step 1 — GOP-4] Loading model checkpoint from: {CKPT_PATH}")
     ckpt = torch.load(CKPT_PATH, map_location=DEVICE)
     _ckpt_cfg = ckpt.get('config', {})
@@ -366,20 +393,26 @@ def main():
     _MODEL_RESIZE = (_model_frame_size, _model_frame_size)
 
     print(f"[Step 1 — GOP-4] Device: {DEVICE}  | AMP: {amp_enabled}  | Resize: {_MODEL_RESIZE}")
+    print(f"[Step 1 — GOP-4] Classes: {classes}")
+    print(f"[Step 1 — GOP-4] Output CSV: {out_csv}")
     print(f"[Step 1 — GOP-4] Measuring model prediction times across test sequences...\n")
 
     records = []
+    n_videos = 0
 
-    for class_folder in CLASS_FOLDERS:
+    for class_folder in classes:
         class_dir = os.path.join(TESTING_ROOT, class_folder)
         if not os.path.isdir(class_dir):
+            print(f"[WARN] Missing class folder: {class_dir}")
             continue
 
         videos = sorted([d for d in os.listdir(class_dir) if os.path.isdir(os.path.join(class_dir, d))])
+        print(f"[{class_folder}] {len(videos)} video(s): {', '.join(videos)}")
 
         for video in videos:
             video_dir = os.path.join(class_dir, video)
             width, height = parse_resolution(video)
+            n_videos += 1
 
             for qp in QPS:
                 qp_dir = os.path.join(video_dir, qp)
@@ -414,18 +447,13 @@ def main():
                         "pred_time_sec": round(pred_sec, 6)
                     })
 
+                # Save after every QP so a timeout still leaves usable results
+                write_records(out_csv, records)
                 print("Done.")
 
-    os.makedirs(OUT_DIR, exist_ok=True)
-    fieldnames = ["testing_class", "video_id", "qp", "frame_index", "pred_time_sec"]
-
-    with open(PRED_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(records)
-
-    print(f"\n[Step 1 — GOP-4 COMPLETE] Saved {len(records)} prediction time records to:")
-    print(f"  {PRED_CSV}")
+    write_records(out_csv, records)
+    print(f"\n[Step 1 — GOP-4 COMPLETE] Videos measured: {n_videos}")
+    print(f"  Saved {len(records)} prediction time records to:\n  {out_csv}")
 
 
 if __name__ == "__main__":

@@ -1,27 +1,33 @@
 # =============================================================================
 # Measure ConvLSTM-UNet prediction time on a cloud CPU (GitHub-hosted runner)
 # =============================================================================
+# Free runners cancel jobs after ~6 hours. One job for all 15 videos is too slow,
+# so we run ONE JOB PER CLASS in parallel, then merge the CSVs.
+#
 # How to run:
-#   1. Push this repo to GitHub (private recommended)
-#   2. Open the repo on github.com → Actions tab
-#   3. Select "Measure Prediction Time (GOP-4)"
-#   4. Click "Run workflow" → Run workflow
-#   5. When finished, download the artifact "prediction-times-gop4"
+#   1. Actions → "Measure Prediction Time (GOP-4)" → Run workflow
+#   2. Wait for all 4 class jobs + merge (usually a few hours wall-clock)
+#   3. Download artifact "prediction-times-gop4"
 # =============================================================================
 
 name: Measure Prediction Time (GOP-4)
 
 on:
-  workflow_dispatch:   # manual run only (you click a button)
+  workflow_dispatch:
 
 jobs:
   measure:
-    name: Run calculate_prediction_time_gop4.py
+    name: Measure ${{ matrix.class_folder }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        class_folder: [ClassA, ClassB, ClassC, ClassD]
 
     env:
       THESIS_ROOT: ${{ github.workspace }}
+      MEASURE_CLASS: ${{ matrix.class_folder }}
 
     steps:
       - name: Checkout repository
@@ -35,24 +41,73 @@ jobs:
       - name: Install Python packages (CPU PyTorch)
         run: |
           python -m pip install --upgrade pip
-          # torch only (script no longer needs torchvision)
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-ci.txt
 
       - name: Verify inputs exist
         run: |
           test -f best_model_gop4.pt
-          test -d "Archive/VVC Reconstructed/New - All same resolution"
+          test -d "Archive/VVC Reconstructed/New - All same resolution/${{ matrix.class_folder }}"
           python -c "import torch; print('torch', torch.__version__, 'cuda?', torch.cuda.is_available())"
-          python -c "import calculate_prediction_time_gop4; print('script import OK')"
 
-      - name: Measure prediction times (GOP-4)
+      - name: Measure prediction times (${{ matrix.class_folder }})
         run: python calculate_prediction_time_gop4.py
 
-      - name: Upload prediction_times.csv
+      - name: Upload per-class CSV
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: prediction-times-gop4
-          path: Archive/Class Prediction Time GOP4/prediction_times.csv
+          name: prediction-times-${{ matrix.class_folder }}
+          path: Archive/Class Prediction Time GOP4/prediction_times_${{ matrix.class_folder }}.csv
           if-no-files-found: warn
+
+  merge:
+    name: Merge CSVs
+    needs: measure
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all class artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prediction-times-Class*
+          path: downloaded
+          merge-multiple: true
+
+      - name: Merge into prediction_times.csv
+        run: |
+          python <<'PY'
+          import csv, glob, os
+          paths = sorted(glob.glob("downloaded/prediction_times_Class*.csv"))
+          print("Found:", paths)
+          if not paths:
+              raise SystemExit("No per-class CSVs found — nothing to merge.")
+          rows = []
+          fieldnames = None
+          for p in paths:
+              with open(p, newline="", encoding="utf-8") as f:
+                  reader = csv.DictReader(f)
+                  fieldnames = reader.fieldnames
+                  rows.extend(list(reader))
+          os.makedirs("out", exist_ok=True)
+          out = "out/prediction_times.csv"
+          with open(out, "w", newline="", encoding="utf-8") as f:
+              writer = csv.DictWriter(f, fieldnames=fieldnames)
+              writer.writeheader()
+              writer.writerows(rows)
+          print(f"Merged {len(rows)} rows -> {out}")
+          classes = sorted({r.get("testing_class") for r in rows})
+          videos = sorted({(r.get("testing_class"), r.get("video_id")) for r in rows})
+          print(f"Classes: {classes}")
+          print(f"Unique videos: {len(videos)}")
+          for c, v in videos:
+              print(f"  {c}/{v}")
+          PY
+
+      - name: Upload merged prediction_times.csv
+        uses: actions/upload-artifact@v4
+        with:
+          name: prediction-times-gop4
+          path: out/prediction_times.csv
+          if-no-files-found: error
