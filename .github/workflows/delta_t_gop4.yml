@@ -1,0 +1,130 @@
+# =============================================================================
+# ΔT pipeline — GOP-4 ONLY (never mixes with GOP-8 paths)
+# =============================================================================
+# Data root : Archive/VVC Reconstructed/All same resolution - GOP 4/
+# Model     : best_model_gop4.pt
+# Outputs   : Archive/Class Prediction Time GOP4/
+#
+# Steps:
+#   1) Measure prediction time per class (parallel)
+#   2) Merge prediction_times_*.csv
+#   3) Run delta_t_calculate_gop4.py (needs encode.log)
+# =============================================================================
+
+name: Delta-T GOP-4
+
+on:
+  workflow_dispatch:
+
+jobs:
+  measure:
+    name: "GOP4 measure ${{ matrix.class_folder }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        class_folder: [ClassA, ClassB, ClassC, ClassD]
+
+    env:
+      THESIS_ROOT: ${{ github.workspace }}
+      MEASURE_CLASS: ${{ matrix.class_folder }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch + deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-ci.txt
+
+      - name: Verify GOP-4 inputs
+        run: |
+          test -f best_model_gop4.pt
+          test -d "Archive/VVC Reconstructed/All same resolution - GOP 4/${{ matrix.class_folder }}"
+          # Require at least one recon.yuv + encode.log in this class
+          find "Archive/VVC Reconstructed/All same resolution - GOP 4/${{ matrix.class_folder }}" -name recon.yuv | head -1 | grep -q .
+          find "Archive/VVC Reconstructed/All same resolution - GOP 4/${{ matrix.class_folder }}" -name encode.log | head -1 | grep -q .
+          python -c "import torch; print('torch', torch.__version__, 'cuda?', torch.cuda.is_available())"
+
+      - name: Measure prediction times (GOP-4)
+        run: python calculate_prediction_time_gop4.py
+
+      - name: Upload per-class prediction CSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gop4-prediction-times-${{ matrix.class_folder }}
+          path: Archive/Class Prediction Time GOP4/prediction_times_${{ matrix.class_folder }}.csv
+          if-no-files-found: warn
+
+  merge_and_delta_t:
+    name: "GOP4 merge + ΔT"
+    needs: measure
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      THESIS_ROOT: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps (pandas for ΔT)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-ci.txt
+
+      - name: Download class prediction CSVs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gop4-prediction-times-Class*
+          path: downloaded
+          merge-multiple: true
+
+      - name: Merge prediction_times.csv (GOP-4)
+        run: |
+          python <<'PY'
+          import csv, glob, os
+          paths = sorted(glob.glob("downloaded/prediction_times_Class*.csv"))
+          print("Found:", paths)
+          if not paths:
+              raise SystemExit("No GOP-4 per-class CSVs found.")
+          rows, fieldnames = [], None
+          for p in paths:
+              with open(p, newline="", encoding="utf-8") as f:
+                  reader = csv.DictReader(f)
+                  fieldnames = reader.fieldnames
+                  rows.extend(list(reader))
+          out_dir = "Archive/Class Prediction Time GOP4"
+          os.makedirs(out_dir, exist_ok=True)
+          out = os.path.join(out_dir, "prediction_times.csv")
+          with open(out, "w", newline="", encoding="utf-8") as f:
+              w = csv.DictWriter(f, fieldnames=fieldnames)
+              w.writeheader()
+              w.writerows(rows)
+          print(f"Merged {len(rows)} rows -> {out}")
+          print("Videos:", sorted({(r['testing_class'], r['video_id']) for r in rows}))
+          PY
+
+      - name: Compute ΔT (GOP-4)
+        run: python delta_t_calculate_gop4.py
+
+      - name: Upload GOP-4 ΔT artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: delta-t-gop4-results
+          path: |
+            Archive/Class Prediction Time GOP4/prediction_times.csv
+            Archive/Class Prediction Time GOP4/summary_delta_t.csv
+            Archive/Class Prediction Time GOP4/detailed_delta_t.csv
+          if-no-files-found: warn

@@ -40,13 +40,16 @@ from PIL import Image
 # Local default still works on your PC; on CI, set THESIS_ROOT to the repo checkout path.
 _PROJECT_ROOT = Path(os.environ.get("THESIS_ROOT", Path(__file__).resolve().parent))
 
-# Root directory containing ClassA .. ClassD subdirectories
-TESTING_ROOT = str(_PROJECT_ROOT / "Archive" / "VVC Reconstructed" / "New - All same resolution")
+# GOP-4 VVC reconstructed root (encode.log + recon.yuv).
+# NOTE: This is NOT "New model/240p Predictions GOP 4" (those are model outputs).
+TESTING_ROOT = str(
+    _PROJECT_ROOT / "Archive" / "VVC Reconstructed" / "All same resolution - GOP 4"
+)
 
 # Path to trained GOP-4 model checkpoint
 CKPT_PATH = str(_PROJECT_ROOT / "best_model_gop4.pt")
 
-# Output directory & output CSV path
+# Output directory & output CSV path (GOP-4 only — never mix with GOP-8)
 OUT_DIR  = str(_PROJECT_ROOT / "Archive" / "Class Prediction Time GOP4")
 PRED_CSV = os.path.join(OUT_DIR, "prediction_times.csv")
 
@@ -419,12 +422,18 @@ def main():
                 if not os.path.isdir(qp_dir):
                     continue
 
-                # Locate reconstructed YUV
+                # Prefer recon.yuv (never pick P_*.yuv / predicted*.yuv by accident)
                 vvc_yuv = None
-                for fname in os.listdir(qp_dir):
-                    if fname.endswith(".yuv"):
-                        vvc_yuv = os.path.join(qp_dir, fname)
-                        break
+                recon = os.path.join(qp_dir, "recon.yuv")
+                if os.path.exists(recon):
+                    vvc_yuv = recon
+                else:
+                    for fname in sorted(os.listdir(qp_dir)):
+                        if fname.startswith(("P_", "predicted", "Predicted")):
+                            continue
+                        if fname.endswith(".yuv"):
+                            vvc_yuv = os.path.join(qp_dir, fname)
+                            break
 
                 if not vvc_yuv or not os.path.exists(vvc_yuv):
                     continue

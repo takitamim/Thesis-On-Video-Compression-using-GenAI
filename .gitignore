@@ -14,16 +14,43 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Local experiment outputs (keep source data; ignore regenerated results)
+# Local experiment / thesis outputs (not needed for ΔT CI)
 Archive/Class Prediction Time/
 Archive/Class Prediction Time GOP4/
 Archive/New model/
 Archive/Matlab BD Curve/
+Archive/Original 240p 32 Frames/
+Archive/Original 240p Videos/
+Archive/Original_F32/
+Archive/VVC Reconstructed/Testing_ClassA/
+Archive/VVC Reconstructed/Testing_ClassB/
+Archive/VVC Reconstructed/Testing_ClassC/
+Archive/VVC Reconstructed/Testing_ClassD/
 Visual Quality Comparison/
 Rate Distortion Curves/
 
-# Large / unrelated local folders you do NOT need on GitHub for ΔT Step 1
-*.log
+# Archives
 *.zip
 *.rar
 *.7z
+
+# Generic logs — but KEEP encode.log (required for ΔT Step 2)
+*.log
+!**/encode.log
+
+# Bulky VVC sidecars (keep only recon.yuv + encode.log on GitHub)
+Archive/VVC Reconstructed/**/P_*.yuv
+Archive/VVC Reconstructed/**/B_*.bin
+Archive/VVC Reconstructed/**/C_*.yuv
+Archive/VVC Reconstructed/**/predicted.yuv
+Archive/VVC Reconstructed/**/gop_metrics.csv
+Archive/VVC Reconstructed/**/yuvplayer.exe
+Archive/VVC Reconstructed/**/*.csv
+
+# Loose full-sequence YUVs under GOP-4 class folders (not recon.yuv)
+Archive/VVC Reconstructed/All same resolution - GOP 4/ClassA/*.yuv
+Archive/VVC Reconstructed/All same resolution - GOP 4/ClassB/*.yuv
+Archive/VVC Reconstructed/All same resolution - GOP 4/ClassC/*.yuv
+Archive/VVC Reconstructed/All same resolution - GOP 4/ClassD/*.yuv
+
+.DS_Store
