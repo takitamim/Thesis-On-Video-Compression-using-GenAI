@@ -54,3 +54,15 @@ Archive/VVC Reconstructed/All same resolution - GOP 4/ClassC/*.yuv
 Archive/VVC Reconstructed/All same resolution - GOP 4/ClassD/*.yuv
 
 .DS_Store
+
+# Local development artifacts
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+node_modules/
+.DS_Store
+Thumbs.db
